@@ -131,22 +131,26 @@ func (h *CloudWatchLogsHook) flushList() (list []types.InputLogEvent) {
 	return
 }
 
+func (h *CloudWatchLogsHook) sendBatch(ctx context.Context) {
+	eventsList := h.flushList()
+	if len(eventsList) > 0 {
+		h.sendLogs(ctx, eventsList)
+	}
+}
+
 func (h *CloudWatchLogsHook) batchCycle(ctx context.Context) {
 	for {
 		select {
 		case <-h.tick.C:
-			eventsList := h.flushList()
-			if len(eventsList) > 0 {
-				h.sendLogs(ctx, eventsList)
-			}
-
+			h.sendBatch(ctx)
 		case <-ctx.Done():
-			h.Close()
+			h.Close(ctx)
 			return
 		}
 	}
 }
 
-func (h *CloudWatchLogsHook) Close() {
+func (h *CloudWatchLogsHook) Close(ctx context.Context) {
 	h.tick.Stop()
+	h.sendBatch(ctx)
 }

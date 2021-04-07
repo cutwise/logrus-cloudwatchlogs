@@ -17,10 +17,11 @@ func generateLogStreamName() string {
 }
 
 func TestBatching(t *testing.T) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-1"))
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	require.NoError(t, err)
 
-	hook, err := NewCloudWatchLogsHook(context.TODO(), &CloudWatchLogsHookOptions{
+	hook, err := NewCloudWatchLogsHook(ctx, &CloudWatchLogsHookOptions{
 		AwsConfig:     cfg,
 		GroupName:     "test_group",
 		StreamNameFn:  generateLogStreamName,
@@ -28,7 +29,7 @@ func TestBatching(t *testing.T) {
 		BatchMaxSize:  1024,
 	})
 	require.NoError(t, err)
-	defer hook.Close()
+	defer hook.Close(ctx)
 
 	logger := logrus.New()
 	logger.AddHook(hook)
