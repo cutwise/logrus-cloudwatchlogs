@@ -1,4 +1,4 @@
-module github.com/cutwise/logrus-cloudwatchlogs
+module github.com/cutwise/logrus_cloudwatchlogs
 
 go 1.16
 
