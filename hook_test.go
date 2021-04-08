@@ -33,9 +33,9 @@ func TestBatching(t *testing.T) {
 
 	logger := logrus.New()
 	logger.AddHook(hook)
-	logger.SetFormatter(&logrus.TextFormatter{
-		DisableColors:    true,
+	logger.SetFormatter(&logrus.JSONFormatter{
 		DisableTimestamp: true,
+		PrettyPrint:      false,
 	})
 	contextLogger := logger.WithField("server", "test.example.com").WithField("env", "test")
 
@@ -44,10 +44,10 @@ func TestBatching(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			contextLogger.Info("Test INFO #", i)
-			contextLogger.Warn("Test WARN #", i)
-			contextLogger.Error("Test ERROR #", i)
-			contextLogger.Debug("Test DEBUG #", i)
+			contextLogger.WithField("execution", rand.Float64()*100.0).Info("Test INFO #", i)
+			contextLogger.WithField("execution", rand.Float64()*100.0).Warn("Test WARN #", i)
+			contextLogger.WithField("execution", rand.Float64()*100.0).Error("Test ERROR #", i)
+			contextLogger.WithField("execution", rand.Float64()*100.0).Debug("Test DEBUG #", i)
 			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 		}(i)
 	}

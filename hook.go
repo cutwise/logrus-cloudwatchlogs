@@ -2,11 +2,13 @@ package logrus_cloudwatchlogs
 
 import (
 	"context"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"sort"
 	"sync"
 	"time"
 )
@@ -19,7 +21,7 @@ type CloudWatchLogsHook struct {
 	queue        chan types.InputLogEvent
 	tick         *time.Ticker
 	mux          *sync.RWMutex
-	ErrCh        chan error
+	wg           sync.WaitGroup
 }
 
 type CloudWatchLogsHookOptions struct {
@@ -44,7 +46,7 @@ func (h *CloudWatchLogsHook) Levels() []logrus.Level {
 func NewCloudWatchLogsHook(ctx context.Context, options *CloudWatchLogsHookOptions) (*CloudWatchLogsHook, error) {
 	cwlog := &CloudWatchLogsHook{
 		client:       cloudwatchlogs.NewFromConfig(options.AwsConfig),
-		group:        aws.String(options.GroupName),
+		group:        &options.GroupName,
 		stream:       aws.String(options.StreamNameFn()),
 		nextSeqToken: nil,
 
@@ -92,14 +94,22 @@ func (h *CloudWatchLogsHook) Fire(entry *logrus.Entry) error {
 
 func (h *CloudWatchLogsHook) putEvent(evMessage string, evTime time.Time) {
 	h.mux.Lock()
+	h.wg.Add(1)
 	h.queue <- types.InputLogEvent{
-		Message:   aws.String(evMessage),
+		Message:   &evMessage,
 		Timestamp: aws.Int64(evTime.UnixNano() / int64(time.Millisecond)),
 	}
 	h.mux.Unlock()
 }
 
 func (h *CloudWatchLogsHook) sendLogs(ctx context.Context, list []types.InputLogEvent) {
+	defer h.wg.Add(-len(list))
+
+	// Log events in a single PutLogEvents request must be in chronological order.
+	sort.Slice(list, func(i, j int) bool {
+		return *list[i].Timestamp < *list[j].Timestamp
+	})
+
 	out, err := h.client.PutLogEvents(ctx, &cloudwatchlogs.PutLogEventsInput{
 		LogEvents:     list,
 		SequenceToken: h.nextSeqToken,
@@ -107,7 +117,7 @@ func (h *CloudWatchLogsHook) sendLogs(ctx context.Context, list []types.InputLog
 		LogStreamName: h.stream,
 	})
 	if err != nil {
-		h.ErrCh <- errors.Wrap(err, "CloudWatchLogs logs send")
+		fmt.Println(errors.Wrap(err, "CloudWatchLogs logs send"))
 		return
 	}
 
@@ -153,4 +163,5 @@ func (h *CloudWatchLogsHook) batchCycle(ctx context.Context) {
 func (h *CloudWatchLogsHook) Close(ctx context.Context) {
 	h.tick.Stop()
 	h.sendBatch(ctx)
+	h.wg.Wait()
 }
