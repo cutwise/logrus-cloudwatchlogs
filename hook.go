@@ -15,6 +15,8 @@ import (
 
 type CloudWatchLogsHook struct {
 	client       *cloudwatchlogs.Client
+	formatter    logrus.Formatter
+	levels       []logrus.Level
 	group        *string
 	stream       *string
 	nextSeqToken *string
@@ -30,17 +32,12 @@ type CloudWatchLogsHookOptions struct {
 	StreamNameFn  func() string
 	BatchDuration time.Duration
 	BatchMaxSize  int
+	Formatter     logrus.Formatter
+	Levels        []logrus.Level
 }
 
 func (h *CloudWatchLogsHook) Levels() []logrus.Level {
-	return []logrus.Level{
-		logrus.PanicLevel,
-		logrus.FatalLevel,
-		logrus.ErrorLevel,
-		logrus.WarnLevel,
-		logrus.InfoLevel,
-		logrus.DebugLevel,
-	}
+	return h.levels
 }
 
 func NewCloudWatchLogsHook(ctx context.Context, options *CloudWatchLogsHookOptions) (*CloudWatchLogsHook, error) {
@@ -49,6 +46,8 @@ func NewCloudWatchLogsHook(ctx context.Context, options *CloudWatchLogsHookOptio
 		group:        &options.GroupName,
 		stream:       aws.String(options.StreamNameFn()),
 		nextSeqToken: nil,
+		levels:       options.Levels,
+		formatter:    options.Formatter,
 
 		queue: make(chan types.InputLogEvent, options.BatchMaxSize),
 		tick:  time.NewTicker(options.BatchDuration),
@@ -63,13 +62,30 @@ func NewCloudWatchLogsHook(ctx context.Context, options *CloudWatchLogsHookOptio
 		return nil, errors.Wrap(err, "CloudWatchLogs create stream")
 	}
 
+	if cwlog.formatter == nil {
+		cwlog.formatter = &logrus.JSONFormatter{
+			PrettyPrint: false,
+		}
+	}
+
+	if len(cwlog.levels) == 0 {
+		cwlog.levels = []logrus.Level{
+			logrus.PanicLevel,
+			logrus.FatalLevel,
+			logrus.ErrorLevel,
+			logrus.WarnLevel,
+			logrus.InfoLevel,
+			logrus.DebugLevel,
+		}
+	}
+
 	go cwlog.batchCycle(ctx)
 
 	return cwlog, nil
 }
 
 func (h *CloudWatchLogsHook) Fire(entry *logrus.Entry) error {
-	line, err := entry.String()
+	payload, err := h.formatter.Format(entry)
 	if err != nil {
 		return errors.Wrap(err, "Unable to read entry")
 	}
@@ -86,7 +102,7 @@ func (h *CloudWatchLogsHook) Fire(entry *logrus.Entry) error {
 	case logrus.InfoLevel:
 		fallthrough
 	case logrus.DebugLevel:
-		h.putEvent(line, entry.Time)
+		h.putEvent(string(payload), entry.Time)
 	}
 
 	return nil

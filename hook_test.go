@@ -27,16 +27,16 @@ func TestBatching(t *testing.T) {
 		StreamNameFn:  generateLogStreamName,
 		BatchDuration: 100 * time.Millisecond,
 		BatchMaxSize:  1024,
+		Formatter: &logrus.JSONFormatter{
+			DisableTimestamp: true,
+			PrettyPrint:      false,
+		},
 	})
 	require.NoError(t, err)
 	defer hook.Close(ctx)
 
 	logger := logrus.New()
 	logger.AddHook(hook)
-	logger.SetFormatter(&logrus.JSONFormatter{
-		DisableTimestamp: true,
-		PrettyPrint:      false,
-	})
 	contextLogger := logger.WithField("server", "test.example.com").WithField("env", "test")
 
 	var wg sync.WaitGroup
